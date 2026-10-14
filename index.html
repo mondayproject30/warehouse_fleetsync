@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autonomous Warehouse Robot Fleet Simulator (2D Real-Time)</title>
+  <meta name="description" content="2D real-time autonomous warehouse fleet simulator with 4 robots, 3-lane road overtaking, simulated LiDAR raycasting, job queues, and automated conveyor routing.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-badge">🤖</div>
+      <div>
+        <h1 class="app-title">Warehouse Robot Fleet Simulator</h1>
+        <span class="sub-status"><span class="pulse-dot"></span> FLEET ACTIVE • 60 HZ REAL-TIME SIMULATION</span>
+      </div>
+    </div>
+
+    <!-- Playback & Speed Controls -->
+    <div class="sim-controls">
+      <div class="btn-group">
+        <button id="btn-play" class="btn btn-control active" title="Play">▶ Run</button>
+        <button id="btn-pause" class="btn btn-control" title="Pause">⏸ Pause</button>
+        <button id="btn-step" class="btn btn-control" title="Step 1 Frame">⏭ Step</button>
+        <button id="btn-reset" class="btn btn-control btn-warning" title="Reset Fleet">↺ Reset</button>
+      </div>
+
+      <div class="speed-selector">
+        <span class="label">SPEED:</span>
+        <button class="btn-speed" data-speed="0.5">0.5x</button>
+        <button class="btn-speed active" data-speed="1.0">1x</button>
+        <button class="btn-speed" data-speed="2.0">2x</button>
+        <button class="btn-speed" data-speed="4.0">4x</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="app-main">
+    <!-- Left: Canvas Area -->
+    <section class="canvas-panel">
+      <div class="canvas-wrapper">
+        <canvas id="sim-canvas" width="1360" height="760"></canvas>
+      </div>
+
+      <!-- View Overlays Toggle Bar -->
+      <div class="view-toggles-bar">
+        <span class="toggles-title">OVERLAYS:</span>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-lidar" checked>
+          <span class="custom-chk"></span>
+          <span>LiDAR Rays (Green/Red)</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-lanes" checked>
+          <span class="custom-chk"></span>
+          <span>Road Lanes & Arrows</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-paths" checked>
+          <span class="custom-chk"></span>
+          <span>Planned Paths</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-graph">
+          <span class="custom-chk"></span>
+          <span>Graph Nodes & Edges</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-safety" checked>
+          <span class="custom-chk"></span>
+          <span>Safety Distance (5 m)</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-reservations" checked>
+          <span class="custom-chk"></span>
+          <span>Node Reservations</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-waitfor" checked>
+          <span class="custom-chk"></span>
+          <span>Wait-For Graph & Status</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Right: Sidebar Control Dashboard -->
+    <aside class="dashboard-sidebar">
+
+      <!-- Acceptance Scenarios Section -->
+      <div class="card scenario-card">
+        <div class="card-header">
+          <h3>🚀 Acceptance Test Scenarios</h3>
+        </div>
+        <div class="scenario-grid">
+          <button id="btn-scen-a" class="btn-scenario" title="Robot 1 executes Shelf 1 to Delivery">
+            <strong>Scenario A</strong>
+            <span>Shelf 1 → Delivery</span>
+          </button>
+          <button id="btn-scen-b" class="btn-scenario scenario-highlight" title="Demonstrates 3-lane overtaking with blocked center lane">
+            <strong>Scenario B</strong>
+            <span>Dynamic Overtake</span>
+          </button>
+          <button id="btn-scen-c" class="btn-scenario" title="4 robots, 20 jobs, auto-assignment stress test">
+            <strong>Scenario C</strong>
+            <span>4 Robots / 20 Jobs</span>
+          </button>
+          <button id="btn-scen-d" class="btn-scenario" title="All side lanes blocked -> safe wait & resume">
+            <strong>Scenario D</strong>
+            <span>Deadlock & Wait</span>
+          </button>
+          <button id="btn-scen-e" class="btn-scenario" title="Low battery robot recharges at charging slot">
+            <strong>Scenario E</strong>
+            <span>Auto Recharge</span>
+          </button>
+          <button id="btn-scen-f" class="btn-scenario" title="Splitter routes items to Packaging vs Delivery">
+            <strong>Scenario F</strong>
+            <span>Conveyor Splitter</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Metrics Cards -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="metric-val" id="metric-completed">0</span>
+          <span class="metric-lbl">Jobs Completed</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-val" id="metric-avg-time">0.0s</span>
+          <span class="metric-lbl">Avg Duration</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-val" id="metric-throughput">0/min</span>
+          <span class="metric-lbl">Throughput</span>
+        </div>
+        <div class="metric-card highlight-overtake">
+          <span class="metric-val" id="metric-overtakes">0</span>
+          <span class="metric-lbl">Overtakes</span>
+        </div>
+        <div class="metric-card">
+          <span class="metric-val" id="metric-nearmisses">0</span>
+          <span class="metric-lbl">Near-Misses</span>
+        </div>
+        <div class="metric-card metric-collision">
+          <span class="metric-val" id="metric-collisions">0</span>
+          <span class="metric-lbl">Collisions</span>
+        </div>
+      </div>
+
+      <!-- Robot Fleet Inspector -->
+      <div class="card inspector-card">
+        <div class="card-header">
+          <h3>🔍 Fleet Robot Inspector</h3>
+        </div>
+        <div class="robot-tabs-row">
+          <button class="robot-tab active" data-robot-id="1">R1 (Blue)</button>
+          <button class="robot-tab" data-robot-id="2">R2 (Green)</button>
+          <button class="robot-tab" data-robot-id="3">R3 (Amber)</button>
+          <button class="robot-tab" data-robot-id="4">R4 (Purple)</button>
+        </div>
+
+        <div class="inspector-body">
+          <div class="insp-row">
+            <span class="lbl">State:</span>
+            <span id="insp-state" class="val-state">Idle</span>
+          </div>
+          <div class="insp-row">
+            <span class="lbl">Battery:</span>
+            <div class="battery-wrapper">
+              <div class="battery-track">
+                <div id="insp-battery-bar" class="battery-fill high" style="width: 100%;"></div>
+              </div>
+              <span id="insp-battery" class="val-mono">100%</span>
+            </div>
+          </div>
+          <div class="insp-row">
+            <span class="lbl">Current Job:</span>
+            <span id="insp-job" class="val-mono">None</span>
+          </div>
+          <div class="insp-row">
+            <span class="lbl">Nearest LiDAR:</span>
+            <span id="insp-lidar" class="val-mono">Clear</span>
+          </div>
+
+          <div class="inspector-actions">
+            <button id="btn-toggle-block" class="btn btn-warning btn-block" title="Force stop this robot to test overtaking maneuvers">
+              Force Stop / Block This Robot
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dispatch Job Panel -->
+      <div class="card job-form-card">
+        <div class="card-header">
+          <h3>📦 Dispatch New Job</h3>
+        </div>
+        <div class="job-form-grid">
+          <div class="form-group">
+            <label for="job-robot">Robot</label>
+            <select id="job-robot" class="form-control">
+              <option value="auto">Auto (Nearest Free)</option>
+              <option value="1">Robot 1</option>
+              <option value="2">Robot 2</option>
+              <option value="3">Robot 3</option>
+              <option value="4">Robot 4</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="job-shelf">Source Shelf</label>
+            <select id="job-shelf" class="form-control">
+              <option value="1">Shelf 1 (Top-Left)</option>
+              <option value="2">Shelf 2 (Top-Right)</option>
+              <option value="3">Shelf 3 (Bottom-Left)</option>
+              <option value="4">Shelf 4 (Bottom-Right)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="job-dest">Destination</label>
+            <select id="job-dest" class="form-control">
+              <option value="DELIVERY">Delivery Station</option>
+              <option value="PACKAGING">Packaging Station</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="job-priority">Priority</label>
+            <select id="job-priority" class="form-control">
+              <option value="NORMAL">Normal</option>
+              <option value="HIGH">High Priority</option>
+              <option value="LOW">Low</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="job-buttons-row">
+          <button id="btn-add-job" class="btn btn-primary">+ Add Job</button>
+          <button id="btn-random-jobs" class="btn btn-secondary">+ Random (x10)</button>
+          <button id="btn-stress-test" class="btn btn-accent">⚡ Stress Test</button>
+          <button id="btn-clear-queue" class="btn btn-muted">Clear</button>
+        </div>
+      </div>
+
+      <!-- Job Queue Table -->
+      <div class="card job-table-card">
+        <div class="card-header">
+          <h3>📋 Live Job Queue</h3>
+        </div>
+        <div class="table-container">
+          <table class="job-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Shelf</th>
+                <th>Destination</th>
+                <th>Robot</th>
+                <th>Pri</th>
+              </tr>
+            </thead>
+            <tbody id="job-table-body">
+              <tr>
+                <td colspan="6" class="text-center text-muted">No jobs in queue. Create one above!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="card log-card">
+        <div class="card-header">
+          <h3>📜 System & Event Log</h3>
+          <button id="btn-clear-logs" class="btn-xs">Clear Log</button>
+        </div>
+        <div id="event-log-list" class="log-container">
+          <!-- Dynamically populated entries -->
+        </div>
+      </div>
+
+    </aside>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
